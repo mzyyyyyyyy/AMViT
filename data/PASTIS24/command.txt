@@ -1,0 +1,3 @@
+python data/PASTIS24/data2windows.py --rootdir D:\\PASTIS\\ALL_GXData --savedir D:\\DeepSatModels_Data\\data\\GXData\\pickle32x32 --HWout 32
+
+pickle24x24/30589_14.pickle

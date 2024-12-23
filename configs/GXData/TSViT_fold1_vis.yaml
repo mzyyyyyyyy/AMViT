@@ -1,0 +1,67 @@
+MODEL:
+  architecture:  "TSViT"
+  img_res: 32
+  max_seq_len: 80
+  num_channels: 11
+  num_features: 16
+  num_classes: 12
+  ignore_background: [0]
+  dropout: 0.
+  patch_size: 2
+  dim: 128
+  temporal_depth: 4
+  spatial_depth: 4
+  heads: 4
+  pool: 'cls'
+  dim_head: 32
+  # dim_head = dim / head
+  emb_dropout: 0.
+  scale_dim: 4
+
+DATASETS:
+  train:
+    dataset: "PASTIS24_fold1"
+    label_map:
+    max_seq_len: 80
+    batch_size: 16
+    extra_data:
+    num_workers: 4
+
+  eval:
+    dataset: "PASTIS24_fold1"
+    label_map:
+    max_seq_len: 80
+    batch_size: 24
+    extra_data:
+    num_workers: 4
+
+  test:
+    dataset: "PASTIS24_fold1"
+    label_map:
+    max_seq_len: 80
+    batch_size: 4
+    extra_data:
+    num_workers: 4
+
+SOLVER:
+  num_epochs: 100
+  num_warmup_epochs: 10
+  steps: (0, 80000)
+  loss_function:  masked_cross_entropy
+  class_weights:
+  lr_scheduler: 'cosine'
+  lr_base: 1e-3
+  lr_min: 5e-6
+  lr_start: 1e-8
+  lr_decay: 0.97
+  num_cycles: 1
+  reset_lr: True   # resets lr to base value when loading pretrained model
+  weight_decay: 0.000
+
+CHECKPOINT:
+  load_from_checkpoint: 'D:\\DeepSatModels_SavedModels\\saved_models\\GXData_result_ignore_cls0_modified'
+  partial_restore: False
+  save_path: 'D:\\DeepSatModels_SavedModels\\saved_models\\GXData_test_data\\TSViT_fold1'
+  train_metrics_steps: 250
+  eval_steps: 2000
+  save_steps: 20000000000

@@ -1,0 +1,16 @@
+训练：
+python train_and_eval/segmentation_training_transf.py --config configs/PASTIS24/TSViT_fold1.yaml
+
+测试：
+python train_and_eval/segmentation_test_transf.py --config configs/PASTIS24/TSViT_fold1.yaml
+
+测试 for GXData:
+python train_and_eval/segmentation_test_transf.py --config configs/GXData/TSViT_fold1.yaml
+
+python train_and_eval/segmentation_test_transf.py --config configs/GXData/TSViT_single_fold1.yaml
+
+
+attention 可视化：
+python train_and_eval/attention_vis.py --config configs/PASTIS24/TSViT_fold1.yaml
+
+source G:\\Anaconda\\etc\\profile.d\\conda.sh
