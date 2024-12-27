@@ -4,7 +4,7 @@ MODEL:
   max_seq_len: 60
   num_channels: 11
   num_features: 16
-  num_classes: 19
+  num_classes: 20
   ignore_background: False
   dropout: 0.
   patch_size: 2

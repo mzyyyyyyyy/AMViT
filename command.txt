@@ -14,3 +14,7 @@ attention 可视化：
 python train_and_eval/attention_vis.py --config configs/PASTIS24/TSViT_fold1.yaml
 
 source G:\\Anaconda\\etc\\profile.d\\conda.sh
+
+
+测试 for AMViT PASTIS24:
+python train_and_eval/seg_test_amvit.py --config configs/PASTIS24/AMViT_fold2.yaml

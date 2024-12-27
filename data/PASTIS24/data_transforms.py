@@ -62,7 +62,8 @@ class ToTensor(object):
     def __call__(self, sample):
         tensor_sample = {}
         tensor_sample['inputs'] = torch.tensor(sample['img']).to(torch.float32)
-        tensor_sample['labels'] = torch.tensor(sample['labels'].astype(np.float32)).to(torch.float32).unsqueeze(-1)
+        tensor_sample['labels'] = torch.tensor(sample['labels'][0].astype(np.float32)).to(torch.float32).unsqueeze(-1) # for PASTIS24
+        # tensor_sample['labels'] = torch.tensor(sample['labels'].astype(np.float32)).to(torch.float32).unsqueeze(-1) # for GXData
         tensor_sample['doy'] = torch.tensor(np.array(sample['doy'])).to(torch.float32)
         return tensor_sample
 

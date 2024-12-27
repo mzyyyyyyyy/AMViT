@@ -4,12 +4,44 @@
     // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        
+        
+        {
+            "name": "Debug train_and_eval/seg_test_amvit.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_and_eval/seg_test_amvit.py",
+            "args": ["--config", "configs/PASTIS24/AMViT_fold2.yaml"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+            
+        {
+            "name": "Debug train_and_eval/segmentation_test_transf.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_and_eval/segmentation_test_transf.py",
+            "args": ["--config", "configs/PASTIS24/TSViT_fold1.yaml"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        
 
         {
             "name": "all_model",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/train_and_eval/visualize_result4all_models.py",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+
+        {
+            "name": "train_and_eval/segmentation_test_transf4GX.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_and_eval/segmentation_test_transf.py",
+            "args": ["--config", "configs/GXData/TSViT_fold1.yaml"],
             "console": "integratedTerminal",
             "justMyCode": false
         }

@@ -1,11 +1,11 @@
 MODEL:
-  architecture:  "TSViT"
+  architecture:  "AMViT"
   img_res: 24
   max_seq_len: 60
   num_channels: 11
   num_features: 16
   num_classes: 20
-  ignore_background: []
+  ignore_background: [0]
   dropout: 0.
   patch_size: 2
   dim: 128
@@ -14,8 +14,20 @@ MODEL:
   heads: 4
   pool: 'cls'
   dim_head: 32
+  # dim_head = dim / head
   emb_dropout: 0.
   scale_dim: 4
+
+  device: 'cpu'
+
+  phenology_num: 5
+  phenology_prior: [[25, 64, 142, 214, 273], [26, 78, 130, 182, 234], [27, 92, 157, 222, 287], [28, 106, 184, 262, 340], 
+  [84, 106, 129, 301, 331], [85, 120, 155, 190, 225], [86, 134, 181, 228, 275], [87, 148, 207, 266, 325], 
+  [88, 162, 233, 304, 361], [144, 162, 181, 338, 356], [145, 196, 247, 298, 349], [146, 210, 313, 316, 352], 
+  [16, 24, 49, 156, 269], [19, 64, 98, 145, 258], [46, 87, 95, 162, 278], [49, 148, 195, 275, 325],
+  [41, 162, 198, 245, 296], [114, 163, 198, 215, 356]]
+
+  cls_token_num: 20
 
 DATASETS:
   train:
@@ -52,14 +64,16 @@ SOLVER:
   lr_base: 1e-3
   lr_min: 5e-6
   lr_start: 1e-8
+  lr_decay: 0.97
   num_cycles: 1
   reset_lr: True   # resets lr to base value when loading pretrained model
   weight_decay: 0.000
 
 CHECKPOINT:
-  load_from_checkpoint:
+  # load_from_checkpoint: 'D:\\AMViT\\PASTIS24_checkpoints\\TSViT_fold1'
+  load_from_checkpoint: False
   partial_restore: False
-  save_path: 'models/saved_models/PASTIS24/TSViT_fold2'
+  save_path: 'D:\\AMViT_SavedModels\\saved_models\\PASTIS24\\TSViT_fold1'
   train_metrics_steps: 250
   eval_steps: 2000
   save_steps: 20000000000

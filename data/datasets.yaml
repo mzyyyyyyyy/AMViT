@@ -16,10 +16,10 @@ PASTIS24_fold1:
     paths_test: "D:\\DeepSatModels_Data\\data\\GXData\\fold-paths\\fold_5_paths.csv"
 
 PASTIS24_fold2:
-    basedir: "D:\\DeepSatModels\\data\\PASTIS24\\DATA\\PASTIS24"
-    paths_train: "D:\\DeepSatModels\\data\\PASTIS24\\DATA\\PASTIS24\\fold-paths\\folds_2_234_paths.csv"
-    paths_eval: "D:\\DeepSatModels\\data\\PASTIS24\\DATA\\PASTIS24\\fold-paths\\fold_5_paths.csv"
-    paths_test: "D:\\DeepSatModels\\data\\PASTIS24\\DATA\\PASTIS24\\fold-paths\\fold_1_paths.csv"
+    basedir: "D:\\DeepSatModels_Data\\data\\PASTIS24\\DATA\\PASTIS24"
+    paths_train: "D:\\DeepSatModels_Data\\data\\PASTIS24\\DATA\\PASTIS24\\fold-paths\\folds_2_234_paths.csv"
+    paths_eval: "D:\\DeepSatModels_Data\\data\\PASTIS24\\DATA\\PASTIS24\\fold-paths\\fold_5_paths.csv"
+    paths_test: "D:\\DeepSatModels_Data\\data\\PASTIS24\\DATA\\PASTIS24\\fold-paths\\fold_1_paths.csv"
 
 PASTIS24_fold3:
     basedir: "D:\\DeepSatModels\\data\\PASTIS24\\DATA\\PASTIS24"
