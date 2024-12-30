@@ -52,16 +52,26 @@ class DeformedAgent(nn.Module):
 
         self.cls_token_num = model_config['cls_token_num']
 
-    @torch.no_grad()
-    def _get_ref_points(self, L_key, B, dtype, device):
+        self.phenology_prior = model_config['phenology_prior']
 
-        ref = torch.linspace(0.5, L_key - 0.5, L_key, dtype=dtype, device=device)
+        self.is_training = False
+
+    def set_mode(self, is_training):
+        self.training = is_training
+    
+    def _get_ref_points(self, L_key, B, device):
+
+
+        ref = torch.linspace(1, 365, L_key, dtype=int, device=device) # 包含在 1 到 365 之间均匀分布的 L_key 个数。
+        x_min, x_max = 1, 365
+        y_min, y_max = 0, 59
+        ref = (ref - x_min) * (y_max - y_min) / (x_max - x_min) + y_min
         ref = ref[None, :].expand(B * self.n_groups, -1).unsqueeze(-1)  # B * g L 1
-
+        
         return ref
 
 
-    def forward(self, q, tokens):
+    def forward(self, q, tokens, x_labels=None):
         # 1, 计算偏移量
         # 2，生成参考点（训练和推理时，生成参考点的方式不同）
         # 3，计算位置
@@ -71,29 +81,37 @@ class DeformedAgent(nn.Module):
         tokens = tokens[:, self.cls_token_num:, :]
         q = q[:, self.cls_token_num:, :]
         B, L, C = tokens.size() # b n d
-        dtype, device = tokens.dtype, tokens.device
+        device = tokens.device
 
         q_off = einops.rearrange(q, 'b n (g c) -> (b g) c n', g=self.n_groups, c=self.n_group_channels)
-        offset = self.conv_offset(q_off).contiguous()  
+        offset = self.conv_offset(q_off).contiguous()
         # b * g 1 ng, 这里 ng 的大小由 conv_offset 模块内部的卷积层决定。
 
         Lk = offset.size(2)
         n_sample = Lk
 
         if self.offset_range_factor >= 0 and not self.no_off:
-            offset_range = torch.tensor([1.0 / (Lk - 1.0)], device=self.device).reshape(1, 1, 1)
-            offset = offset.tanh().mul(offset_range).mul(self.offset_range_factor)
+            # offset_range = torch.tensor([1.0 / (Lk - 1.0)], device=self.device).reshape(1, 1, 1) # 创建一个包含值 1.0 / (Lk - 1.0) 的张量，将张量的形状调整为 (1, 1, 1)
+            offset = offset.tanh().mul(self.offset_range_factor) # 对 offset 张量应用 tanh 函数，将其值限制在 -1 到 1 之间；将 tanh 结果与 offset_range 相乘，缩放 offset 的值；将结果与 offset_range_factor 相乘，缩放 offset 的值。
 
         offset = einops.rearrange(offset, 'b p l -> b l p') 
-        reference = self._get_ref_points(Lk, B, dtype, device) 
+        if self.is_training:
+            if torch.cuda.device_count() > 1: # 确保 reference 和 x_lables 在多卡训练时被正确地分配到 GPU 上。
+                reference = reference.to('cuda')
+                x_labels = x_labels.to('cuda')
+                self.phenology_prior = self.phenology_prior.to('cuda')
+            for i in range(B):
+                reference[i] = self.phenology_prior[x_labels[i]]
+        else:
+            reference = self._get_ref_points(Lk, B, device)
 
         if self.no_off:
-            offset = offset.fill_(0.0)
+            offset = offset.fill_(0.0) # 将 offset 置零
 
         if self.offset_range_factor >= 0:
             pos = offset + reference 
         else:
-            pos = (offset + reference).clamp(-1., +1.)
+            pos = (offset + reference).clamp(-1., +1.) # 将张量中的每个元素限制在指定的范围内，如果某个元素小于 -1，则将其设置为 -1；如果某个元素大于 +1，则将其设置为 +1
 
         if self.no_off:
             x_sampled = F.avg_pool1d(tokens, kernel_size=self.stride, stride=self.stride)
@@ -101,13 +119,15 @@ class DeformedAgent(nn.Module):
         else:
             # 使用线性插值并结合 pos 信息
             pos = pos[..., 0].unsqueeze(1)  # 取 pos 的第一个维度作为插值位置 
-            x_sampled = F.interpolate(
-                tokens.reshape(B * self.n_groups, self.n_group_channels, L),
-                size=Lk,
-                mode='linear',
-                align_corners=True
-            ) 
-            x_sampled = x_sampled.gather(2, pos.long().expand(B, C, Lk))  # 使用 pos 进行采样 
+            pos = pos.long().expand(B, C, Lk)
+            # x_sampled = F.interpolate(
+            #     tokens.reshape(B * self.n_groups, self.n_group_channels, L),
+            #     size=Lk,
+            #     mode='linear',
+            #     align_corners=True
+            # ) 
+            x_sampled = tokens.reshape(B * self.n_groups, self.n_group_channels, L)
+            x_sampled = x_sampled.gather(2, pos)  # 使用 pos 进行采样
 
 
         x_sampled = x_sampled.reshape(B, n_sample, C)
@@ -148,9 +168,12 @@ class AgentTransformer(nn.Module):
         self.pool = nn.AdaptiveAvgPool1d(output_size=self.agent_num)
         self.deformed_agent = DeformedAgent(model_config)
 
-        self.phenology_prior = model_config['phenology_prior']
+        self.is_training = False
 
-    def forward(self, x):
+    def set_mode(self, is_training):
+        self.is_training = is_training
+
+    def forward(self, x, x_labels=None):
         num, t, d = x.shape
         num_heads = self.num_heads
         head_dim = d // num_heads
@@ -160,7 +183,11 @@ class AgentTransformer(nn.Module):
         # q.shape = (b, n, c)
 
         # 通过 deformed 方式生成 agent tokens.
-        agent_tokens_q = self.deformed_agent(q, x)
+        self.deformed_agent.set_mode(self.is_training)
+        if self.is_training:
+            agent_tokens_q = self.deformed_agent(q, x, x_labels)
+        else:
+            agent_tokens_q = self.deformed_agent(q, x)
         q = q.reshape(num, t, num_heads, head_dim).permute(0, 2, 1, 3)
         k = k.reshape(num, t, num_heads, head_dim).permute(0, 2, 1, 3)
         v = v.reshape(num, t, num_heads, head_dim).permute(0, 2, 1, 3)

@@ -54,9 +54,16 @@ class AMViT(nn.Module):
         # 这一模块中的参数暂时先用模块内部预定义的。
         self.fusion = Fusion(model_config) 
         # 先用简单的聚合 cls tokens 实现，然后用 MTV 的核心代码填充
+        self.is_training = False
+
+    def set_mode(self, is_training):
+        self.is_training = is_training
 
 
     def forward(self, x):
+        if self.is_training:
+            x = x['inputs']
+            x_labels = x['labels']
         # 2D CNN tokenizer
         x = x.permute(0, 1, 4, 2, 3)
         B, T, C, H, W = x.shape
@@ -77,9 +84,24 @@ class AMViT(nn.Module):
 
         x_token = torch.cat((cls_temporal_tokens, x_token), dim=1)
 
+        # 将 x_labels 的预处理为与 tokens 对应的 shape，使它们一一对应
+
+
+
 
         # temporal encoder for AMViT
-        x = self.deform_agent_transformer(x_token)
+        self.deform_agent_transformer.set_mode(self.is_training)
+        if self.is_training:
+            # 将 x_labels 的预处理为与 tokens 对应的 shape，使它们一一对应
+            labels = x_labels.view(x_labels.size(0), 1, x_labels.size(1), x_labels.size(2))
+            labels_unfolded = F.unfold(labels, kernel_size=self.patch_size, stride=self.patch_size)
+            labels_unfolded = labels_unfolded.view(labels.size(0), 1, -1, self.patch_size * self.patch_size)
+            labels_mode, _ = torch.mode(labels_unfolded, dim=-1)
+            labels_mode = labels_mode.view(-1, 1)   # (B * H * W, 1)
+
+            x = self.deform_agent_transformer(x_token, x_labels)
+        else:   
+            x = self.deform_agent_transformer(x_token)
         # 这里有一个遗留问题：生成关键物候期 timesteps 的时候，应该去除 cls_tokens. √
         # 还有一个遗留问题，训练和测试的时候，生成关键物候期 timesteps 的方式是不是不同。
         # 还有一个遗留问题，我只用了一个 DAT 模块，是不是应该用整个 DAT 框架，反正输入输出都一样。
