@@ -5,7 +5,16 @@
     "version": "0.2.0",
     "configurations": [
         
-        
+        {
+            "name": "Debug train_and_eval/seg_train_amvit.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_and_eval/seg_train_amvit.py",
+            "args": ["--config", "configs/PASTIS24/AMViT_fold2.yaml"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+
         {
             "name": "Debug train_and_eval/seg_test_amvit.py",
             "type": "debugpy",

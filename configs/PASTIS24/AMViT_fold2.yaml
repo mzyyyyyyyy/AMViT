@@ -73,7 +73,7 @@ CHECKPOINT:
   # load_from_checkpoint: 'D:\\AMViT\\PASTIS24_checkpoints\\TSViT_fold1'
   load_from_checkpoint: False
   partial_restore: False
-  save_path: 'D:\\AMViT_SavedModels\\saved_models\\PASTIS24\\TSViT_fold1'
+  save_path: '/root/autodl-tmp/AMViT_SavedModels/PASTIS24_fold2'
   train_metrics_steps: 250
   eval_steps: 2000
   save_steps: 20000000000

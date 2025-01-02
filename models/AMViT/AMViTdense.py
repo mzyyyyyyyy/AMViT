@@ -60,10 +60,8 @@ class AMViT(nn.Module):
         self.is_training = is_training
 
 
-    def forward(self, x):
-        if self.is_training:
-            x = x['inputs']
-            x_labels = x['labels']
+    def forward(self, x, x_labels=None):
+
         # 2D CNN tokenizer
         x = x.permute(0, 1, 4, 2, 3)
         B, T, C, H, W = x.shape
@@ -122,7 +120,6 @@ class AMViT(nn.Module):
 
 
         # segmentation head
-        print(x.shape)
         x = self.mlp_head(x.reshape(-1, self.dim))
 
         x = x.reshape(B, self.num_classes, self.num_patches_1d**2, self.patch_size**2).permute(0, 2, 3, 1)

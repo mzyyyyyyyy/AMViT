@@ -18,3 +18,6 @@ source G:\\Anaconda\\etc\\profile.d\\conda.sh
 
 测试 for AMViT PASTIS24:
 python train_and_eval/seg_test_amvit.py --config configs/PASTIS24/AMViT_fold2.yaml
+
+训练 for AMViT PASTIS24:
+python train_and_eval/seg_train_amvit.py --config configs/PASTIS24/AMViT_fold2.yaml

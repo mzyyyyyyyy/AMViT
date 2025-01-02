@@ -18,6 +18,7 @@ from metrics.numpy_metrics import get_classification_metrics, get_per_class_loss
 from metrics.loss_functions import get_loss
 from utils.summaries import write_mean_summaries, write_class_summaries
 from data import get_loss_data_input
+from tqdm import tqdm
 
 
 def train_and_evaluate(net, dataloaders, config, device, lin_cls=False):
@@ -26,11 +27,11 @@ def train_and_evaluate(net, dataloaders, config, device, lin_cls=False):
         optimizer.zero_grad()
         # print(sample['inputs'].shape)
         
-        if config['MODEL']['name'] == 'AMViT':
-            net.set_mode(True)
-            outputs = net(sample.to(device))
-        
-        outputs = net(sample['inputs'].to(device))
+        if config['MODEL']['architecture'] == 'AMViT':
+            net.module.set_mode(True)
+            outputs = net(sample['inputs'].to(device), sample['labels'].to(device))
+        else:
+            outputs = net(sample['inputs'].to(device))
         outputs = outputs.permute(0, 2, 3, 1)
         ground_truth = loss_input_fn(sample, device)
         loss = loss_fn['mean'](outputs, ground_truth)
@@ -46,7 +47,7 @@ def train_and_evaluate(net, dataloaders, config, device, lin_cls=False):
         net.eval()
         with torch.no_grad():
             for step, sample in enumerate(evalloader):
-                net.set_mode(False)
+                net.module.set_mode(False)
                 logits = net(sample['inputs'].to(device))
                 logits = logits.permute(0, 2, 3, 1)
                 _, predicted = torch.max(logits.data, -1)
@@ -143,8 +144,8 @@ def train_and_evaluate(net, dataloaders, config, device, lin_cls=False):
 
     BEST_IOU = 0
     net.train()
-    for epoch in range(start_epoch, start_epoch + num_epochs):  # loop over the dataset multiple times
-        for step, sample in enumerate(dataloaders['train']):
+    for epoch in tqdm(range(start_epoch, start_epoch + num_epochs)):  # loop over the dataset multiple times
+        for step, sample in tqdm(enumerate(dataloaders['train'])):
             abs_step = start_global + (epoch - start_epoch) * num_steps_train + step
             logits, ground_truth, loss = train_step(net, sample, loss_fn, optimizer, device, loss_input_fn=loss_input_fn)
             if len(ground_truth) == 2:

@@ -37,13 +37,13 @@ def confusion_mat(predicted, labels, n_classes):  # , unk_masks=None):
 def get_prediction_splits(predicted, labels, n_classes, if_print_cm):
     cm = confusion_mat(predicted, labels, n_classes).astype(np.float32)
 
-    if if_print_cm == True:
-        plt.figure(figsize=(10, 7))
-        sns.heatmap(cm, annot=True, fmt='.2f', cmap='Blues')
-        plt.xlabel('Predicted')
-        plt.ylabel('Actual')
-        plt.title('Confusion Matrix')
-        plt.show()
+    # if if_print_cm == True:
+    #     plt.figure(figsize=(10, 7))
+    #     sns.heatmap(cm, annot=True, fmt='.2f', cmap='Blues')
+    #     plt.xlabel('Predicted')
+    #     plt.ylabel('Actual')
+    #     plt.title('Confusion Matrix')
+    #     plt.show()
     
 
     diag = np.diagonal(cm)
