@@ -5,6 +5,7 @@ from models.BiConvRNN.biconv_rnn import BiRNNSequentialEncoder
 from models.TSViT.TSViTdense import TSViT, TSViT_single_token
 from models.TSViT.TSViTcls import TSViTcls
 from models.AMViT.AMViTdense import AMViT
+from models.MViT.MViT import MViT
 
 def get_model(config, device):
     model_config = config['MODEL']
@@ -32,7 +33,10 @@ def get_model(config, device):
         return TSViT_single_token(model_config).to(device)  
 
     if model_config['architecture'] == "AMViT":
-        return AMViT(model_config).to(device)   
+        return AMViT(model_config).to(device)  
+
+    if model_config['architecture'] == "MViT":
+        return MViT(model_config).to(device)     
 
     else:
         raise NameError("Model architecture %s not found, choose from: 'UNET3D', 'UNET3Df', 'UNET2D-CLSTM', 'TSViT', 'TSViTcls'")

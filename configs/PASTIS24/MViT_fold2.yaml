@@ -1,17 +1,17 @@
 MODEL:
-  architecture:  "AMViT"
-  img_res: 24
+  architecture:  "MViT"
+  # img_res: 24
   max_seq_len: 60
   num_channels: 11
   num_features: 16
-  num_classes: 20
+  # num_classes: 20
   ignore_background: [0]
   dropout: 0.
-  patch_size: 2
-  dim: 128
+  # patch_size: 2
+  # dim: 128
   temporal_depth: 4
   spatial_depth: 4
-  heads: 4
+  # heads: 4
   pool: 'cls'
   dim_head: 32
   # dim_head = dim / head
@@ -29,12 +29,22 @@ MODEL:
 
   cls_token_num: 20
 
+  in_feat_dim: 128
+  inter_channels: [32, 48, 72, 108]
+  num_head: 4
+  mlp_ratio: 8
+  num_block: 3
+  final_embedding_dim: 128
+  num_classes: 20
+  patch_size: 2
+  img_res: 24
+
 DATASETS:
   train:
     dataset: "PASTIS24_fold2"
     label_map:
     max_seq_len: 60
-    batch_size: 16
+    batch_size: 8
     extra_data:
     num_workers: 4
 
@@ -63,7 +73,8 @@ SOLVER:
   lr_scheduler: 'cosine'
   lr_base: 1e-3
   lr_min: 5e-6
-  lr_start: 1e-8
+  # lr_start: 1e-8
+  lr_start: 5e-3
   lr_decay: 0.97
   num_cycles: 1
   reset_lr: True   # resets lr to base value when loading pretrained model
@@ -73,7 +84,7 @@ CHECKPOINT:
   # load_from_checkpoint: 'D:\\AMViT\\PASTIS24_checkpoints\\TSViT_fold1'
   load_from_checkpoint: False
   partial_restore: False
-  save_path: '/root/autodl-tmp/AMViT_SavedModels_2/PASTIS24_fold2'
+  save_path: '/root/autodl-tmp/MViT_SavedModels/PASTIS24_fold2'
   train_metrics_steps: 50
   eval_steps: 100
   save_steps: 20000000000

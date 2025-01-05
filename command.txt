@@ -21,3 +21,7 @@ python train_and_eval/seg_test_amvit.py --config configs/PASTIS24/AMViT_fold2.ya
 
 训练 for AMViT PASTIS24:
 python train_and_eval/seg_train_amvit.py --config configs/PASTIS24/AMViT_fold2.yaml
+训练 for TSViT PASTIS24:
+python train_and_eval/seg_train_TSViT.py --config configs/PASTIS24/TSViT_fold2.yaml
+训练 for MViT PASTIS24:
+python train_and_eval/seg_train_mvit.py --config configs/PASTIS24/MViT_fold2.yaml

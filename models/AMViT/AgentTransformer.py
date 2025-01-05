@@ -3,6 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 from timm.models.layers import trunc_normal_
 import einops
+import numpy as np
 
 class LayerNormProxy(nn.Module):
     
@@ -54,10 +55,6 @@ class DeformedAgent(nn.Module):
 
         self.phenology_prior = model_config['phenology_prior']
 
-        self.is_training = False
-
-    def set_mode(self, is_training):
-        self.training = is_training
     
     def _get_ref_points(self, L_key, B, device):
 
@@ -95,13 +92,22 @@ class DeformedAgent(nn.Module):
             offset = offset.tanh().mul(self.offset_range_factor) # 对 offset 张量应用 tanh 函数，将其值限制在 -1 到 1 之间；将 tanh 结果与 offset_range 相乘，缩放 offset 的值；将结果与 offset_range_factor 相乘，缩放 offset 的值。
 
         offset = einops.rearrange(offset, 'b p l -> b l p') 
-        if self.is_training:
-            if torch.cuda.device_count() > 1: # 确保 reference 和 x_lables 在多卡训练时被正确地分配到 GPU 上。
-                reference = reference.to('cuda')
-                x_labels = x_labels.to('cuda')
-                self.phenology_prior = self.phenology_prior.to('cuda')
+        if self.training:
+            # if torch.cuda.device_count() > 1: # 确保 reference 和 x_lables 在多卡训练时被正确地分配到 GPU 上。
+            #    x_labels = x_labels.to('cuda')
+            #    self.phenology_prior = self.phenology_prior.to('cuda')
+            reference = []
             for i in range(B):
-                reference[i] = self.phenology_prior[x_labels[i]]
+                if int(x_labels[i]) >= len(self.phenology_prior):
+                    raise IndexError(f"x_labels[{i}] = {int(x_labels[i])} is out of range")
+
+                reference.append(self.phenology_prior[int(x_labels[i])])
+
+                x_min, x_max = np.min(reference[i]), np.max(reference[i])
+                y_min, y_max = 0, 59
+                reference[i] = (reference[i] - x_min) * (y_max - y_min) / (x_max - x_min) + y_min
+            
+            reference = torch.tensor(reference, device=device).unsqueeze(-1)
         else:
             reference = self._get_ref_points(Lk, B, device)
 
@@ -168,10 +174,6 @@ class AgentTransformer(nn.Module):
         self.pool = nn.AdaptiveAvgPool1d(output_size=self.agent_num)
         self.deformed_agent = DeformedAgent(model_config)
 
-        self.is_training = False
-
-    def set_mode(self, is_training):
-        self.is_training = is_training
 
     def forward(self, x, x_labels=None):
         num, t, d = x.shape
@@ -183,8 +185,8 @@ class AgentTransformer(nn.Module):
         # q.shape = (b, n, c)
 
         # 通过 deformed 方式生成 agent tokens.
-        self.deformed_agent.set_mode(self.is_training)
-        if self.is_training:
+        # agent_tokens_q = self.pool(q.reshape(num, t, d).permute(0, 2, 1)).reshape(num, d, -1).permute(0, 2, 1)
+        if self.deformed_agent.training:
             agent_tokens_q = self.deformed_agent(q, x, x_labels)
         else:
             agent_tokens_q = self.deformed_agent(q, x)

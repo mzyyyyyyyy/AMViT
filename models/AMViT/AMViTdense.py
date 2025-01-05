@@ -6,6 +6,8 @@ from einops.layers.torch import Rearrange
 from models.AMViT.AgentTransformer import *
 from models.AMViT.MultiTempTransformer import *
 
+from models.TSViT.TSViTdense import Transformer
+
 class AMViT(nn.Module):
     """
     Temporal-Spatial ViT5 (used in main results, section 4.3)
@@ -42,11 +44,13 @@ class AMViT(nn.Module):
             nn.Linear(patch_dim, self.dim),)
         self.to_temporal_embedding_input = nn.Linear(366, self.dim)
         self.temporal_token = nn.Parameter(torch.randn(1, self.num_classes, self.dim))
-        self.dropout = nn.Dropout(self.emb_dropout)
+        
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(self.dim),
             nn.Linear(self.dim, self.patch_size**2)
         )
+        self.temporal_transformer = Transformer(self.dim, self.temporal_depth, self.heads, self.dim_head,
+                                                self.dim * self.scale_dim, self.dropout)
 
         self.deform_agent_transformer = AgentTransformer(self.dim, self.heads, model_config, self.heads) # 用 agent attention 的核心代码填充
         self.multi_temporal_transformer = MultiTempTransformer(model_config, self.dim)
@@ -54,10 +58,9 @@ class AMViT(nn.Module):
         # 这一模块中的参数暂时先用模块内部预定义的。
         self.fusion = Fusion(model_config) 
         # 先用简单的聚合 cls tokens 实现，然后用 MTV 的核心代码填充
-        self.is_training = False
+        self.dropout = nn.Dropout(self.emb_dropout)
 
-    def set_mode(self, is_training):
-        self.is_training = is_training
+
 
 
     def forward(self, x, x_labels=None):
@@ -88,23 +91,22 @@ class AMViT(nn.Module):
 
 
         # temporal encoder for AMViT
-        self.deform_agent_transformer.set_mode(self.is_training)
-        if self.is_training:
+        # x = self.deform_agent_transformer(x_token)
+        if self.deform_agent_transformer.training:
             # 将 x_labels 的预处理为与 tokens 对应的 shape，使它们一一对应
             labels = x_labels.view(x_labels.size(0), 1, x_labels.size(1), x_labels.size(2))
             labels_unfolded = F.unfold(labels, kernel_size=self.patch_size, stride=self.patch_size)
             labels_unfolded = labels_unfolded.view(labels.size(0), 1, -1, self.patch_size * self.patch_size)
             labels_mode, _ = torch.mode(labels_unfolded, dim=-1)
             labels_mode = labels_mode.view(-1, 1)   # (B * H * W, 1)
-
-            x = self.deform_agent_transformer(x_token, x_labels)
+            x = self.deform_agent_transformer(x_token, labels_mode)
         else:   
             x = self.deform_agent_transformer(x_token)
         # 这里有一个遗留问题：生成关键物候期 timesteps 的时候，应该去除 cls_tokens. √
         # 还有一个遗留问题，训练和测试的时候，生成关键物候期 timesteps 的方式是不是不同。
         # 还有一个遗留问题，我只用了一个 DAT 模块，是不是应该用整个 DAT 框架，反正输入输出都一样。
         
-        x = self.multi_temporal_transformer(x)
+        #x = self.multi_temporal_transformer(x_token)
         # input = b t d
         # output = 
         # [b t embed_dims[0], 
@@ -112,16 +114,28 @@ class AMViT(nn.Module):
         # b cls_tokens+(t-cls_tokens//4) embed_dims[2], 
         # b cls_tokens+(t-cls_tokens//8) embed_dims[3]]
         # 遗留问题：卷积模块应该只处理非 cls tokens。√
-        x = self.fusion(x)
+        #x = self.fusion(x)
         # (b, cls_tokens, embed_dims[3])
         # 先用最简单的方式实现：只用 b cls_tokens embed_dims[3]
 
-        x = self.dropout(x) # 保留原始 TSViT 的模块，但原因不详。
+        #x = self.dropout(x) # 保留原始 TSViT 的模块，但原因不详。
+
 
 
         # segmentation head
-        x = self.mlp_head(x.reshape(-1, self.dim))
+        # x = self.mlp_head(x.reshape(-1, self.dim))
+        # x = x.reshape(B, self.num_classes, self.num_patches_1d**2, self.patch_size**2).permute(0, 2, 3, 1)
+        # x = x.reshape(B, H, W, self.num_classes)
+        # x = x.permute(0, 3, 1, 2)
 
+
+
+        # x = torch.cat((cls_temporal_tokens, x), dim=1)
+        # x = self.temporal_transformer(x)
+
+        x = x[:, :self.num_classes]
+        x = x.reshape(B, self.num_patches_1d**2, self.num_classes, self.dim).permute(0, 2, 1, 3).reshape(B*self.num_classes, self.num_patches_1d**2, self.dim)
+        x = self.mlp_head(x.reshape(-1, self.dim))
         x = x.reshape(B, self.num_classes, self.num_patches_1d**2, self.patch_size**2).permute(0, 2, 3, 1)
         x = x.reshape(B, H, W, self.num_classes)
         x = x.permute(0, 3, 1, 2)

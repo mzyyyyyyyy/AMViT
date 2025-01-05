@@ -5,7 +5,7 @@ MODEL:
   num_channels: 11
   num_features: 16
   num_classes: 20
-  ignore_background: []
+  ignore_background: [0, 19]
   dropout: 0.
   patch_size: 2
   dim: 128
@@ -59,7 +59,7 @@ SOLVER:
 CHECKPOINT:
   load_from_checkpoint:
   partial_restore: False
-  save_path: 'models/saved_models/PASTIS24/TSViT_fold2'
-  train_metrics_steps: 250
-  eval_steps: 2000
+  save_path: '/root/autodl-tmp/TSViT_SavedModels/PASTIS24_fold2'
+  train_metrics_steps: 50
+  eval_steps: 100
   save_steps: 20000000000
