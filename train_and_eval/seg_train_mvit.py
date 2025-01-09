@@ -108,8 +108,27 @@ def train_and_evaluate(net, dataloaders, config, device, lin_cls=False):
 
     start_global = 1
     start_epoch = 1
+
+    # if checkpoint:
+    #     load_from_checkpoint(net, checkpoint, partial_restore=False)
     if checkpoint:
-        load_from_checkpoint(net, checkpoint, partial_restore=False)
+        state_dict = torch.load(checkpoint)
+        desired_keys = [
+            'to_patch_embedding.1.weight', 
+            'to_patch_embedding.1.bias', 
+            'to_temporal_embedding_input.weight', 
+            'to_temporal_embedding_input.bias'
+        ]
+        partial_state_dict = {k: state_dict[k] for k in desired_keys}
+        net.load_state_dict(partial_state_dict, strict=False)
+
+    for param in net.to_patch_embedding.parameters():
+        param.requires_grad = False
+
+    for param in net.to_temporal_embedding_input.parameters():
+        param.requires_grad = False
+
+
 
     print("current learn rate: ", lr)
 

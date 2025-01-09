@@ -406,6 +406,20 @@ class TSViT(nn.Module):
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(self.dim),
             nn.Linear(self.dim, self.patch_size**2)
+        ) # has cls token
+
+        # self.mlp_head = nn.Sequential(
+        #     nn.LayerNorm(self.dim),
+        #     nn.Linear(self.dim, self.num_classes)
+        # ) # no cls token
+
+        self.conv_transpose = nn.ConvTranspose2d(
+            in_channels=self.dim,          # 输入通道数 128
+            out_channels=self.dim,         # 输出通道数 128
+            kernel_size=4,            # 卷积核大小 4x4
+            stride=2,                 # 步幅 2，输出尺寸是输入的两倍
+            padding=1,                # 填充 1
+            output_padding=0          # 输出填充 0
         )
 
     def forward(self, x):
@@ -413,16 +427,16 @@ class TSViT(nn.Module):
         B, T, C, H, W = x.shape
 
 
-        xt = x[:, :, -1, 0, 0]
+        # xt = x[:, :, -1, 0, 0]
         x = x[:, :, :-1]
-        xt = (xt * 365.0001).to(torch.int64)
-        xt = F.one_hot(xt, num_classes=366).to(torch.float32)
-        xt = xt.reshape(-1, 366)
-        temporal_pos_embedding = self.to_temporal_embedding_input(xt).reshape(B, T, self.dim)
+        # xt = (xt * 365.0001).to(torch.int64)
+        # xt = F.one_hot(xt, num_classes=366).to(torch.float32)
+        # xt = xt.reshape(-1, 366)
+        # temporal_pos_embedding = self.to_temporal_embedding_input(xt).reshape(B, T, self.dim)
         x = self.to_patch_embedding(x)
         # shape = (24*12*12, 60, 128)
-        x = x.reshape(B, -1, T, self.dim)
-        x += temporal_pos_embedding.unsqueeze(1)
+        # x = x.reshape(B, -1, T, self.dim)
+        # x += temporal_pos_embedding.unsqueeze(1)
         x = x.reshape(-1, T, self.dim)
         cls_temporal_tokens = repeat(self.temporal_token, '() N d -> b N d', b=B * self.num_patches_1d ** 2)
 
@@ -430,18 +444,28 @@ class TSViT(nn.Module):
 
         x = self.temporal_transformer(x)
 
+        # x = x[:, :self.num_classes]
+        # x = x.reshape(B, self.num_patches_1d**2, self.num_classes, self.dim).permute(0, 2, 1, 3).reshape(B*self.num_classes, self.num_patches_1d**2, self.dim)
+        # x.shape = (24*19, 12*12, 128)
+        # x += self.space_pos_embedding#[:, :, :(n + 1)]
+        # x = self.dropout(x)
+        # x = self.space_transformer(x)
+
+        # x = x.mean(dim=-2, keepdim=True)
+
         x = x[:, :self.num_classes]
         x = x.reshape(B, self.num_patches_1d**2, self.num_classes, self.dim).permute(0, 2, 1, 3).reshape(B*self.num_classes, self.num_patches_1d**2, self.dim)
-        # x.shape = (24*19, 12*12, 128)
-        x += self.space_pos_embedding#[:, :, :(n + 1)]
-        x = self.dropout(x)
-        x = self.space_transformer(x)
-
         x = self.mlp_head(x.reshape(-1, self.dim))
-
         x = x.reshape(B, self.num_classes, self.num_patches_1d**2, self.patch_size**2).permute(0, 2, 3, 1)
         x = x.reshape(B, H, W, self.num_classes)
         x = x.permute(0, 3, 1, 2)
+
+        # x = x.view(B, self.dim, self.num_patches_1d, self.num_patches_1d)
+        # x = self.conv_transpose(x)
+        # x = self.mlp_head(x.reshape(-1, self.dim))
+        # x = x.reshape(B, self.num_classes, self.num_patches_1d**2, self.patch_size**2).permute(0, 2, 3, 1)
+        # x = x.reshape(B, H, W, self.num_classes)
+        # x = x.permute(0, 3, 1, 2)
         return x
 
 

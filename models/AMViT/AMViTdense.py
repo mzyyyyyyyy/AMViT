@@ -21,7 +21,8 @@ class AMViT(nn.Module):
         self.num_patches_1d = self.image_size//self.patch_size
         self.num_classes = model_config['num_classes']
         self.num_frames = model_config['max_seq_len']
-        self.dim = model_config['dim']
+        self.in_feat_dim = model_config['in_feat_dim']
+        self.inter_channels = model_config['inter_channels']
         if 'temporal_depth' in model_config:
             self.temporal_depth = model_config['temporal_depth']
         else:
@@ -30,7 +31,7 @@ class AMViT(nn.Module):
             self.spatial_depth = model_config['spatial_depth']
         else:
             self.spatial_depth = model_config['depth']
-        self.heads = model_config['heads']
+        self.num_head = model_config['num_head']
         self.dim_head = model_config['dim_head']
         self.dropout = model_config['dropout']
         self.emb_dropout = model_config['emb_dropout']
@@ -41,22 +42,26 @@ class AMViT(nn.Module):
         patch_dim = (model_config['num_channels'] - 1) * self.patch_size ** 2  # -1 is set to exclude time feature
         self.to_patch_embedding = nn.Sequential(
             Rearrange('b t c (h p1) (w p2) -> (b h w) t (p1 p2 c)', p1=self.patch_size, p2=self.patch_size),
-            nn.Linear(patch_dim, self.dim),)
-        self.to_temporal_embedding_input = nn.Linear(366, self.dim)
-        self.temporal_token = nn.Parameter(torch.randn(1, self.num_classes, self.dim))
+            nn.Linear(patch_dim, self.in_feat_dim),)
+        self.to_temporal_embedding_input = nn.Linear(366, self.in_feat_dim)
+        self.temporal_token = nn.Parameter(torch.randn(1, self.num_classes, self.in_feat_dim))
         
-        self.mlp_head = nn.Sequential(
-            nn.LayerNorm(self.dim),
-            nn.Linear(self.dim, self.patch_size**2)
-        )
-        self.temporal_transformer = Transformer(self.dim, self.temporal_depth, self.heads, self.dim_head,
-                                                self.dim * self.scale_dim, self.dropout)
+        self.mlp_ratio = model_config['mlp_ratio']
+        self.num_block = model_config['num_block']
 
-        self.deform_agent_transformer = AgentTransformer(self.dim, self.heads, model_config, self.heads) # 用 agent attention 的核心代码填充
-        self.multi_temporal_transformer = MultiTempTransformer(model_config, self.dim)
+        self.mlp_head = nn.Sequential(
+            nn.LayerNorm(self.inter_channels[-1]),
+            nn.Linear(self.inter_channels[-1], self.patch_size**2)
+        )
+        self.temporal_transformer = Transformer(self.in_feat_dim, self.temporal_depth, self.num_head, self.dim_head,
+                                                self.in_feat_dim * self.scale_dim, self.dropout)
+
+        self.deform_agent_transformer = AgentTransformer(self.in_feat_dim, self.num_head, model_config, self.num_head) # 用 agent attention 的核心代码填充
+        self.multi_temporal_transformer=MultiTempTransformer(model_config, in_feat_dim=self.in_feat_dim, embed_dims=self.inter_channels,
+                 num_head=self.num_head, mlp_ratio=self.mlp_ratio, norm_layer=nn.LayerNorm,num_block=self.num_block)
         # 用 MSTCT 的核心代码填充
         # 这一模块中的参数暂时先用模块内部预定义的。
-        self.fusion = Fusion(model_config) 
+        # self.fusion = Fusion(model_config) 
         # 先用简单的聚合 cls tokens 实现，然后用 MTV 的核心代码填充
         self.dropout = nn.Dropout(self.emb_dropout)
 
@@ -75,12 +80,12 @@ class AMViT(nn.Module):
         xt = (xt * 365.0001).to(torch.int64)
         xt = F.one_hot(xt, num_classes=366).to(torch.float32)
         xt = xt.reshape(-1, 366)
-        temporal_pos_embedding = self.to_temporal_embedding_input(xt).reshape(B, T, self.dim)
+        temporal_pos_embedding = self.to_temporal_embedding_input(xt).reshape(B, T, self.in_feat_dim)
         x_token = self.to_patch_embedding(x_token)
         # shape = (24*12*12, 60, 128)
-        x_token = x_token.reshape(B, -1, T, self.dim)
+        x_token = x_token.reshape(B, -1, T, self.in_feat_dim)
         x_token += temporal_pos_embedding.unsqueeze(1)
-        x_token = x_token.reshape(-1, T, self.dim)
+        x_token = x_token.reshape(-1, T, self.in_feat_dim)
         cls_temporal_tokens = repeat(self.temporal_token, '() N d -> b N d', b=B * self.num_patches_1d ** 2)
 
         x_token = torch.cat((cls_temporal_tokens, x_token), dim=1)
@@ -106,7 +111,7 @@ class AMViT(nn.Module):
         # 还有一个遗留问题，训练和测试的时候，生成关键物候期 timesteps 的方式是不是不同。
         # 还有一个遗留问题，我只用了一个 DAT 模块，是不是应该用整个 DAT 框架，反正输入输出都一样。
         
-        #x = self.multi_temporal_transformer(x_token)
+        x = self.multi_temporal_transformer(x)
         # input = b t d
         # output = 
         # [b t embed_dims[0], 
@@ -133,9 +138,9 @@ class AMViT(nn.Module):
         # x = torch.cat((cls_temporal_tokens, x), dim=1)
         # x = self.temporal_transformer(x)
 
-        x = x[:, :self.num_classes]
-        x = x.reshape(B, self.num_patches_1d**2, self.num_classes, self.dim).permute(0, 2, 1, 3).reshape(B*self.num_classes, self.num_patches_1d**2, self.dim)
-        x = self.mlp_head(x.reshape(-1, self.dim))
+        x = x[: , :, :self.num_classes]
+        x = x.reshape(B, self.num_patches_1d**2, self.num_classes, self.inter_channels[-1]).permute(0, 2, 1, 3).reshape(B*self.num_classes, self.num_patches_1d**2, self.inter_channels[-1])
+        x = self.mlp_head(x.reshape(-1, self.inter_channels[-1]))
         x = x.reshape(B, self.num_classes, self.num_patches_1d**2, self.patch_size**2).permute(0, 2, 3, 1)
         x = x.reshape(B, H, W, self.num_classes)
         x = x.permute(0, 3, 1, 2)

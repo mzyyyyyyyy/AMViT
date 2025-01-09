@@ -30,10 +30,11 @@ MODEL:
   cls_token_num: 20
 
   in_feat_dim: 128
-  inter_channels: [32, 48, 72, 108]
+  inter_channels: [32, 48, 72, 108] # MViT
+  # inter_channels: [128, 128, 128, 128] # TViT
   num_head: 4
   mlp_ratio: 8
-  num_block: 3
+  num_block: 1
   final_embedding_dim: 128
   num_classes: 20
   patch_size: 2
@@ -44,7 +45,8 @@ DATASETS:
     dataset: "PASTIS24_fold2"
     label_map:
     max_seq_len: 60
-    batch_size: 8
+    # batch_size: 8 # MViT
+    batch_size: 16 # TSViT
     extra_data:
     num_workers: 4
 
@@ -73,8 +75,8 @@ SOLVER:
   lr_scheduler: 'cosine'
   lr_base: 1e-3
   lr_min: 5e-6
-  # lr_start: 1e-8
-  lr_start: 5e-3
+  lr_start: 1e-8 # TSViT
+  # lr_start: 5e-3 # MViT
   lr_decay: 0.97
   num_cycles: 1
   reset_lr: True   # resets lr to base value when loading pretrained model
@@ -82,7 +84,7 @@ SOLVER:
 
 CHECKPOINT:
   # load_from_checkpoint: 'D:\\AMViT\\PASTIS24_checkpoints\\TSViT_fold1'
-  load_from_checkpoint: False
+  load_from_checkpoint: /root/autodl-tmp/AMViT/best.pth
   partial_restore: False
   save_path: '/root/autodl-tmp/MViT_SavedModels/PASTIS24_fold2'
   train_metrics_steps: 50
