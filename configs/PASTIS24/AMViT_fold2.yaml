@@ -6,7 +6,7 @@ MODEL:
   num_features: 16
   # num_classes: 20
   ignore_background: [0]
-  dropout: 0.
+  dropout: 0.3
   # patch_size: 2
   # dim: 128
   temporal_depth: 4
@@ -15,7 +15,7 @@ MODEL:
   pool: 'cls'
   dim_head: 32
   # dim_head = dim / head
-  emb_dropout: 0.
+  emb_dropout: 0.3
   scale_dim: 4
 
   device: 'cpu'
@@ -74,20 +74,20 @@ SOLVER:
   class_weights:
   lr_scheduler: 'cosine'
   lr_base: 1e-3
-  lr_min: 5e-8
+  lr_min: 5e-6
   lr_start: 1e-8 # TSViT
   # lr_start: 5e-3 # MViT
-  lr_decay: 0.80
+  lr_decay: 0.97
   num_cycles: 1
   reset_lr: True   # resets lr to base value when loading pretrained model
   weight_decay: 0.000
 
 CHECKPOINT:
   # load_from_checkpoint: 'D:\\AMViT\\PASTIS24_checkpoints\\TSViT_fold1'
-  load_from_checkpoint: /root/autodl-tmp/AMViT/best.pth
-  # load_from_checkpoint: False
+  # load_from_checkpoint: /root/autodl-tmp/AMViT/best.pth
+  load_from_checkpoint: False
   partial_restore: False
-  save_path: '/root/autodl-tmp/AMViT_SavedModels_2/PASTIS24_fold2'
+  save_path: '/root/autodl-tmp/AMSViT_SavedModels_3/PASTIS24_fold2'
   train_metrics_steps: 50
   eval_steps: 500
   save_steps: 20000000000

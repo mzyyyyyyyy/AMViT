@@ -13,13 +13,13 @@ def load_from_checkpoint(net, checkpoint, partial_restore=False, device=None):
         if device is None:
             saved_net = torch.load(checkpoint)
         else:
-            saved_net = torch.load(checkpoint, map_location=device)
+            saved_net = torch.load(checkpoint, map_location=device, strict=False)
     elif os.path.isfile(checkpoint):
         print("loading model from %s" % checkpoint)
         if device is None:
             saved_net = torch.load(checkpoint)
         else:
-            saved_net = torch.load(checkpoint, map_location=device)
+            saved_net = torch.load(checkpoint, map_location=device, strict=False)
     else:
         raise FileNotFoundError("provided checkpoint not found, does not mach any directory or file")
     

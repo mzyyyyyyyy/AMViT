@@ -63,9 +63,11 @@ class AMViT(nn.Module):
         # 这一模块中的参数暂时先用模块内部预定义的。
         # self.fusion = Fusion(model_config) 
         # 先用简单的聚合 cls tokens 实现，然后用 MTV 的核心代码填充
+        
+        self.space_pos_embedding = nn.Parameter(torch.randn(1, num_patches, self.inter_channels[-1]))
+        self.space_transformer = Transformer(self.inter_channels[-1], self.spatial_depth, self.num_head, self.dim_head, self.inter_channels[-1] * self.scale_dim, self.dropout)
+
         self.dropout = nn.Dropout(self.emb_dropout)
-
-
 
 
     def forward(self, x, x_labels=None):
@@ -96,7 +98,6 @@ class AMViT(nn.Module):
 
 
         # temporal encoder for AMViT
-        # x = self.deform_agent_transformer(x_token)
         if self.deform_agent_transformer.training:
             # 将 x_labels 的预处理为与 tokens 对应的 shape，使它们一一对应
             labels = x_labels.view(x_labels.size(0), 1, x_labels.size(1), x_labels.size(2))
@@ -112,34 +113,29 @@ class AMViT(nn.Module):
         # 还有一个遗留问题，我只用了一个 DAT 模块，是不是应该用整个 DAT 框架，反正输入输出都一样。
         
         x = self.multi_temporal_transformer(x)
-        # input = b t d
-        # output = 
-        # [b t embed_dims[0], 
-        # b cls_tokens+(t-cls_tokens//2) embed_dims[1], 
-        # b cls_tokens+(t-cls_tokens//4) embed_dims[2], 
-        # b cls_tokens+(t-cls_tokens//8) embed_dims[3]]
+
         # 遗留问题：卷积模块应该只处理非 cls tokens。√
-        #x = self.fusion(x)
-        # (b, cls_tokens, embed_dims[3])
         # 先用最简单的方式实现：只用 b cls_tokens embed_dims[3]
 
         #x = self.dropout(x) # 保留原始 TSViT 的模块，但原因不详。
 
 
 
-        # segmentation head
-        # x = self.mlp_head(x.reshape(-1, self.dim))
-        # x = x.reshape(B, self.num_classes, self.num_patches_1d**2, self.patch_size**2).permute(0, 2, 3, 1)
-        # x = x.reshape(B, H, W, self.num_classes)
-        # x = x.permute(0, 3, 1, 2)
-
-
 
         # x = torch.cat((cls_temporal_tokens, x), dim=1)
         # x = self.temporal_transformer(x)
 
-        x = x[: , :, :self.num_classes]
+        x = x[: , :, :self.num_classes] # temporal merge
+        # x = x[:, :self.num_classes, :] # no temporal merge
+
+        # spatial encoder for AMViT
         x = x.reshape(B, self.num_patches_1d**2, self.num_classes, self.inter_channels[-1]).permute(0, 2, 1, 3).reshape(B*self.num_classes, self.num_patches_1d**2, self.inter_channels[-1])
+        x += self.space_pos_embedding#[:, :, :(n + 1)]
+        x = self.dropout(x)
+        x = self.space_transformer(x)
+
+
+        # x = x.reshape(B, self.num_patches_1d**2, self.num_classes, self.inter_channels[-1]).permute(0, 2, 1, 3).reshape(B*self.num_classes, self.num_patches_1d**2, self.inter_channels[-1])
         x = self.mlp_head(x.reshape(-1, self.inter_channels[-1]))
         x = x.reshape(B, self.num_classes, self.num_patches_1d**2, self.patch_size**2).permute(0, 2, 3, 1)
         x = x.reshape(B, H, W, self.num_classes)

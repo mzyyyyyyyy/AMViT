@@ -427,16 +427,16 @@ class TSViT(nn.Module):
         B, T, C, H, W = x.shape
 
 
-        # xt = x[:, :, -1, 0, 0]
+        xt = x[:, :, -1, 0, 0]
         x = x[:, :, :-1]
-        # xt = (xt * 365.0001).to(torch.int64)
-        # xt = F.one_hot(xt, num_classes=366).to(torch.float32)
-        # xt = xt.reshape(-1, 366)
-        # temporal_pos_embedding = self.to_temporal_embedding_input(xt).reshape(B, T, self.dim)
+        xt = (xt * 365.0001).to(torch.int64)
+        xt = F.one_hot(xt, num_classes=366).to(torch.float32)
+        xt = xt.reshape(-1, 366)
+        temporal_pos_embedding = self.to_temporal_embedding_input(xt).reshape(B, T, self.dim)
         x = self.to_patch_embedding(x)
         # shape = (24*12*12, 60, 128)
-        # x = x.reshape(B, -1, T, self.dim)
-        # x += temporal_pos_embedding.unsqueeze(1)
+        x = x.reshape(B, -1, T, self.dim)
+        x += temporal_pos_embedding.unsqueeze(1)
         x = x.reshape(-1, T, self.dim)
         cls_temporal_tokens = repeat(self.temporal_token, '() N d -> b N d', b=B * self.num_patches_1d ** 2)
 

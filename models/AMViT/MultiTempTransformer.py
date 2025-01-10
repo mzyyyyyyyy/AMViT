@@ -87,6 +87,7 @@ class Global_Relational_Block(nn.Module):
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C) + x # 残差操作
         x = self.proj(x)
+        x = nn.Dropout(0.3)(x)
 
         return x
 
@@ -162,10 +163,12 @@ class Temporal_Merging_Block(nn.Module):
     def forward(self, x):
 
         x_normal = self.proj(x[:, :, self.cls_token_num:])
+        x_normal = nn.Dropout(0.3)(x_normal)
         x_normal = x_normal.transpose(1, 2)
         x_normal = self.norm(x_normal)
         x_normal = x_normal.transpose(1, 2)
         x_cls = self.proj_cls(x[:, :, :self.cls_token_num])
+        x_cls = nn.Dropout(0.3)(x_cls)
         x = torch.cat((x_normal, x_cls), dim=2)
         x = x.permute(0, 2, 1).contiguous()
         return x
