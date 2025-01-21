@@ -49,7 +49,7 @@ class DeformedAgent(nn.Module):
 
         self.device = model_config['device']
 
-        self.proj_q = nn.Linear(self.nc, self.nc)
+        self.proj_q = nn.Linear(self.nc, self.nc, bias=True)
 
         self.cls_token_num = model_config['cls_token_num']
 
@@ -59,13 +59,18 @@ class DeformedAgent(nn.Module):
     def _get_ref_points(self, L_key, B, device):
 
 
-        ref = torch.linspace(1, 365, L_key, dtype=int, device=device) # 包含在 1 到 365 之间均匀分布的 L_key 个数。
-        x_min, x_max = 1, 365
-        y_min, y_max = 0, 59
-        ref = (ref - x_min) * (y_max - y_min) / (x_max - x_min) + y_min
+        ref = torch.linspace(0, 59, L_key, dtype=int, device=device) # 包含在 1 到 365 之间均匀分布的 L_key 个数。
+        # x_min, x_max = 1, 365
+        # y_min, y_max = 0, 59
+        # ref = (ref - x_min) * (y_max - y_min) / (x_max - x_min) + y_min
         ref = ref[None, :].expand(B * self.n_groups, -1).unsqueeze(-1)  # B * g L 1
         
         return ref
+    
+    def normlize(self, tensor):
+        min_val = tensor.min(dim=2, keepdim=True)[0]
+        max_val = tensor.max(dim=2, keepdim=True)[0]
+        return (tensor - min_val) / (max_val - min_val) * 59
 
 
     def forward(self, q, tokens, x_labels=None):
@@ -75,71 +80,83 @@ class DeformedAgent(nn.Module):
         # 4，特征采样
         # 5，原始图像投影得到 agent tokens' q.
 
-        tokens = tokens[:, self.cls_token_num:, :]
-        q = q[:, self.cls_token_num:, :]
+        # tokens = tokens[:, self.cls_token_num:, :]
+        # q = q[:, self.cls_token_num:, :]
         B, L, C = tokens.size() # b n d
         device = tokens.device
 
         q_off = einops.rearrange(q, 'b n (g c) -> (b g) c n', g=self.n_groups, c=self.n_group_channels)
         offset = self.conv_offset(q_off).contiguous()
         # b * g 1 ng, 这里 ng 的大小由 conv_offset 模块内部的卷积层决定。
+        offset = self.normlize(offset)
+        
 
         Lk = offset.size(2)
         n_sample = Lk
 
         if self.offset_range_factor >= 0 and not self.no_off:
             # offset_range = torch.tensor([1.0 / (Lk - 1.0)], device=self.device).reshape(1, 1, 1) # 创建一个包含值 1.0 / (Lk - 1.0) 的张量，将张量的形状调整为 (1, 1, 1)
-            offset = offset.tanh().mul(self.offset_range_factor) # 对 offset 张量应用 tanh 函数，将其值限制在 -1 到 1 之间；将 tanh 结果与 offset_range 相乘，缩放 offset 的值；将结果与 offset_range_factor 相乘，缩放 offset 的值。
+            offset = offset.mul(self.offset_range_factor) # 对 offset 张量应用 tanh 函数，将其值限制在 -1 到 1 之间；将 tanh 结果与 offset_range 相乘，缩放 offset 的值；将结果与 offset_range_factor 相乘，缩放 offset 的值。
 
         offset = einops.rearrange(offset, 'b p l -> b l p') 
         if self.training:
             # if torch.cuda.device_count() > 1: # 确保 reference 和 x_lables 在多卡训练时被正确地分配到 GPU 上。
             #    x_labels = x_labels.to('cuda')
             #    self.phenology_prior = self.phenology_prior.to('cuda')
-            reference = []
-            for i in range(B):
-                if int(x_labels[i]) >= len(self.phenology_prior):
-                    raise IndexError(f"x_labels[{i}] = {int(x_labels[i])} is out of range")
-
-                reference.append(self.phenology_prior[int(x_labels[i])])
-
-                x_min, x_max = np.min(reference[i]), np.max(reference[i])
-                y_min, y_max = 0, 59
-                reference[i] = (reference[i] - x_min) * (y_max - y_min) / (x_max - x_min) + y_min
-            
-            reference = torch.tensor(reference, device=device).unsqueeze(-1)
+            reference = torch.tensor([self.phenology_prior[int(x_labels[i])] for i in range(B)], device=device).unsqueeze(-1)
+            reference = reference.transpose(1, 2)
+            reference = self.normlize(reference)
+            reference = reference.transpose(1, 2)
         else:
             reference = self._get_ref_points(Lk, B, device)
+
+        # reference = self._get_ref_points(Lk, B, device)
 
         if self.no_off:
             offset = offset.fill_(0.0) # 将 offset 置零
 
         if self.offset_range_factor >= 0:
-            pos = offset + reference 
+            pos = offset + reference
+            pos = pos.transpose(1, 2)
+            pos = self.normlize(pos)
+            pos = pos.transpose(1, 2)
         else:
-            pos = (offset + reference).clamp(-1., +1.) # 将张量中的每个元素限制在指定的范围内，如果某个元素小于 -1，则将其设置为 -1；如果某个元素大于 +1，则将其设置为 +1
+            pos = (offset + reference).clamp(0., 59.) # 将张量中的每个元素限制在指定的范围内，如果某个元素小于 -1，则将其设置为 -1；如果某个元素大于 +1，则将其设置为 +1
 
         if self.no_off:
             x_sampled = F.avg_pool1d(tokens, kernel_size=self.stride, stride=self.stride)
             assert x_sampled.size(2) == Lk, f"Size is {x_sampled.size()}"
         else:
             # 使用线性插值并结合 pos 信息
-            pos = pos[..., 0].unsqueeze(1)  # 取 pos 的第一个维度作为插值位置 
+            pos = pos.transpose(1, 2)
             pos = pos.long().expand(B, C, Lk)
-            # x_sampled = F.interpolate(
-            #     tokens.reshape(B * self.n_groups, self.n_group_channels, L),
-            #     size=Lk,
-            #     mode='linear',
-            #     align_corners=True
-            # ) 
             x_sampled = tokens.reshape(B * self.n_groups, self.n_group_channels, L)
             x_sampled = x_sampled.gather(2, pos)  # 使用 pos 进行采样
 
 
         x_sampled = x_sampled.reshape(B, n_sample, C)
 
-        q_new = self.proj_q(x_sampled).reshape(B * self.n_heads, self.n_head_channels, n_sample) # shape 与接口处 shape 一致！
+        q_new = self.proj_q(x_sampled) # shape 与接口处 shape 一致！
+        
         return q_new
+
+class MLP(nn.Module):
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
 
 class AgentTransformer(nn.Module):
     def __init__(self, dim, num_heads, model_config, qkv_bias=True, qk_scale=None, attn_drop=0., proj_drop=0.,
@@ -155,10 +172,11 @@ class AgentTransformer(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
         self.softmax = nn.Softmax(dim=-1)
 
-        self.temporal_length = model_config['max_seq_len'] + model_config['cls_token_num']
+        # self.temporal_length = model_config['max_seq_len'] + model_config['cls_token_num']
+        self.temporal_length = model_config['max_seq_len']
         # 问了一下 GPT 在 swin transformer 中，window_size 的作用。
         self.agent_num = model_config['phenology_num']
-        self.dwc = nn.Conv2d(in_channels=dim, out_channels=dim, kernel_size=(3, 3), padding=1, groups=dim)
+        self.dwc = nn.Conv1d(in_channels=dim, out_channels=dim, kernel_size=3, padding=1, groups=dim)
         self.an_bias = nn.Parameter(torch.zeros(num_heads, self.agent_num, self.agent_num))
         self.na_bias = nn.Parameter(torch.zeros(num_heads, self.agent_num, self.agent_num))
         
@@ -173,6 +191,8 @@ class AgentTransformer(nn.Module):
         trunc_normal_(self.ta_bias, std=.02)
         self.pool = nn.AdaptiveAvgPool1d(output_size=self.agent_num)
         self.deformed_agent = DeformedAgent(model_config)
+        self.mlp = MLP(dim, hidden_features=dim * 4, out_features=dim)
+        self.norm = nn.LayerNorm(dim)
 
 
     def forward(self, x, x_labels=None):
@@ -215,9 +235,13 @@ class AgentTransformer(nn.Module):
         x = x.transpose(1, 2).reshape(num, t, d)
 
         # 暂时删去 DWC 模块
-        # v = v.transpose(1, 2).reshape(b, h, w, c).permute(0, 3, 1, 2)
-        # x = x + self.dwc(v).permute(0, 2, 3, 1).reshape(b, n, c)
+        v = v.transpose(1, 2).reshape(num, t, d).permute(0, 2, 1)
+        x = x + self.dwc(v).permute(0, 2, 1).reshape(num, t, d)
 
         x = self.proj(x)
         x = self.proj_drop(x)
+
+        # FFN
+        x = self.mlp(x) + x
+        x = self.norm(x)
         return x

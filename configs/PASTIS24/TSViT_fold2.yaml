@@ -5,7 +5,7 @@ MODEL:
   num_channels: 11
   num_features: 16
   num_classes: 20
-  ignore_background: [0]
+  ignore_background: [0, 19]
   dropout: 0.
   patch_size: 2
   dim: 128
@@ -43,7 +43,7 @@ DATASETS:
     num_workers: 4
 
 SOLVER:
-  num_epochs: 100
+  num_epochs: 50
   num_warmup_epochs: 10
   steps: (0, 80000)
   loss_function:  masked_cross_entropy
@@ -57,9 +57,9 @@ SOLVER:
   weight_decay: 0.000
 
 CHECKPOINT:
-  load_from_checkpoint:
+  load_from_checkpoint: '/root/autodl-tmp/original/PASTIS24_fold2'
   partial_restore: False
-  save_path: '/root/autodl-tmp/TSViT_SavedModels_2/PASTIS24_fold2'
+  save_path: '/root/autodl-tmp/original_50e/PASTIS24_fold2'
   train_metrics_steps: 50
   eval_steps: 500
   save_steps: 20000000000

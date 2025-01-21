@@ -2,6 +2,7 @@ from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 import math
 import torch
 import torch.nn as nn
+from einops import repeat
 
 class Local_Relational_Block(nn.Module):
 
@@ -45,6 +46,19 @@ class Local_Relational_Block(nn.Module):
         x = self.drop(x) + residual # 残差操作
         return x
 
+class FeedForward(nn.Module):
+    def __init__(self, dim, hidden_dim, dropout=0.):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, dim),
+            nn.Dropout(dropout)
+        )
+
+    def forward(self, x):
+        return self.net(x)
 
 class Global_Relational_Block(nn.Module):
     def __init__(self, dim, num_heads=8):
@@ -59,6 +73,8 @@ class Global_Relational_Block(nn.Module):
         self.q = nn.Linear(dim, dim)
         self.kv = nn.Linear(dim, dim * 2)
         self.proj = nn.Linear(dim, dim)
+        self.MLP = FeedForward(dim, 4 * dim)
+        self.norm = nn.LayerNorm(dim)
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -87,7 +103,10 @@ class Global_Relational_Block(nn.Module):
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C) + x # 残差操作
         x = self.proj(x)
-        x = nn.Dropout(0.3)(x)
+        x = self.norm(x)
+        # x = nn.Dropout(0.3)(x)
+        x = self.MLP(x) + x
+        x = self.norm(x)
 
         return x
 
@@ -140,6 +159,7 @@ class Temporal_Merging_Block(nn.Module):
         self.proj = nn.Conv1d(in_chans, embed_dim, kernel_size=kernel_size, stride=stride,
                               padding=(kernel_size// 2))
         self.norm = nn.LayerNorm(embed_dim)
+        self.act = nn.GELU()
         self.proj_cls = nn.Conv1d(in_chans, embed_dim, kernel_size=1)
 
         self.cls_token_num = model_config['cls_token_num']
@@ -161,16 +181,13 @@ class Temporal_Merging_Block(nn.Module):
                 m.bias.data.zero_()
 
     def forward(self, x):
-
-        x_normal = self.proj(x[:, :, self.cls_token_num:])
-        x_normal = nn.Dropout(0.3)(x_normal)
+        x_normal = self.proj(x)
+        # x_normal = nn.Dropout(0.3)(x_normal)
         x_normal = x_normal.transpose(1, 2)
         x_normal = self.norm(x_normal)
         x_normal = x_normal.transpose(1, 2)
-        x_cls = self.proj_cls(x[:, :, :self.cls_token_num])
-        x_cls = nn.Dropout(0.3)(x_cls)
-        x = torch.cat((x_normal, x_cls), dim=2)
-        x = x.permute(0, 2, 1).contiguous()
+        x_normal = self.act(x_normal) # 经典卷积模块：卷积、归一化、激活
+        x = x_normal.permute(0, 2, 1).contiguous()
         return x
 
 
@@ -181,36 +198,42 @@ class MultiTempTransformer(nn.Module):
         super().__init__()
 
         # Stage 1
+        self.num_classes = model_config['num_classes']
+        self.num_patches_1d = model_config['img_res'] // model_config['patch_size']
         self.Temporal_Merging_Block1 = Temporal_Merging_Block(model_config, kernel_size=3, stride=1, in_chans=in_feat_dim,
                                               embed_dim=embed_dims[0])
+        self.temporal_token1 = nn.Parameter(torch.randn(1, self.num_classes, embed_dims[0]))
         self.block1 = nn.ModuleList([GLRBlock(
             dim=embed_dims[0], num_heads=num_head, mlp_ratio=mlp_ratio,norm_layer=norm_layer)
             for i in range(num_block)])
-        self.norm1 = norm_layer(embed_dims[0])
+        # self.norm1 = norm_layer(embed_dims[0]) # 模仿TSViT，norm操作全部放在GLRBlock中
 
         # Stage 2
         self.Temporal_Merging_Block2 = Temporal_Merging_Block(model_config, kernel_size=3, stride=2, in_chans=embed_dims[0],
                                               embed_dim=embed_dims[1])
+        self.temporal_token2 = nn.Parameter(torch.randn(1, self.num_classes, embed_dims[1]))
         self.block2 = nn.ModuleList([GLRBlock(
             dim=embed_dims[1], num_heads=num_head, mlp_ratio=mlp_ratio,norm_layer=norm_layer)
             for i in range(num_block)])
-        self.norm2 = norm_layer(embed_dims[1])
+        # self.norm2 = norm_layer(embed_dims[1])
 
         # Stage 3
         self.Temporal_Merging_Block3 = Temporal_Merging_Block(model_config, kernel_size=3, stride=2, in_chans=embed_dims[1],
                                               embed_dim=embed_dims[2])
+        self.temporal_token3 = nn.Parameter(torch.randn(1, self.num_classes, embed_dims[2]))
         self.block3 = nn.ModuleList([GLRBlock(
             dim=embed_dims[2], num_heads=num_head, mlp_ratio=mlp_ratio,norm_layer=norm_layer)
             for i in range(num_block)])
-        self.norm3 = norm_layer(embed_dims[2])
+        # self.norm3 = norm_layer(embed_dims[2])
 
         # Stage 4
         self.Temporal_Merging_Block4 = Temporal_Merging_Block(model_config, kernel_size=3, stride=2, in_chans=embed_dims[2],
                                               embed_dim=embed_dims[3])
+        self.temporal_token4 = nn.Parameter(torch.randn(1, self.num_classes, embed_dims[3]))
         self.block4 = nn.ModuleList([GLRBlock(
             dim=embed_dims[3], num_heads=num_head, mlp_ratio=mlp_ratio,norm_layer=norm_layer)
             for i in range(num_block)])
-        self.norm4 = norm_layer(embed_dims[3])
+        # self.norm4 = norm_layer(embed_dims[3])
 
         self.apply(self._init_weights)
 
@@ -234,40 +257,60 @@ class MultiTempTransformer(nn.Module):
 
     def forward(self, x):
         outs = []
+        B, _, _ = x.shape
         # stage 1
-        x = self.Temporal_Merging_Block1(x.transpose(1, 2))
+        # x = self.Temporal_Merging_Block1(x.transpose(1, 2))
+        # cls_temporal_tokens1 = repeat(self.temporal_token1, '() N d -> b N d', b=B)
+        # x = torch.cat((cls_temporal_tokens1, x), dim=1)
         for i, blk in enumerate(self.block1):
             x = blk(x)
-        x = self.norm1(x)
-        x = x.permute(0, 2, 1).contiguous() # temporal merge
-        outs.append(x)
+        # x = self.norm1(x)
+        # x = x.permute(0, 2, 1).contiguous() # temporal merge
+        # outs.append(x[:, :, :self.num_classes])
+        # outs.append(x[:, :self.num_classes, :])
+        # x = x[:, :self.num_classes, :]
         # outs.append(x.permute(0, 2, 1).contiguous()) # no temporal merge
 
         # stage 2
-        x = self.Temporal_Merging_Block2(x)
+        # x = self.Temporal_Merging_Block2(x)
+        # cls_temporal_tokens2 = repeat(self.temporal_token2, '() N d -> b N d', b=B)
+        # x = torch.cat((cls_temporal_tokens2, x), dim=1)
         for i, blk in enumerate(self.block2):
             x = blk(x)
-        x = self.norm2(x)
-        x = x.permute(0, 2, 1).contiguous()
-        outs.append(x)
+        # x = self.norm2(x)
+        # x = x.permute(0, 2, 1).contiguous()
+        # outs.append(x[:, :, :self.num_classes])
+        # outs.append(x[:, :self.num_classes, :])
+        # x = x[:, :self.num_classes, :]
         # outs.append(x.permute(0, 2, 1).contiguous())
 
         # stage 3
-        x = self.Temporal_Merging_Block3(x)
+        # x = self.Temporal_Merging_Block3(x)
+        # cls_temporal_tokens3 = repeat(self.temporal_token3, '() N d -> b N d', b=B)
+        # x = torch.cat((cls_temporal_tokens3, x), dim=1)
         for i, blk in enumerate(self.block3):
             x = blk(x)
-        x = self.norm3(x)
-        x = x.permute(0, 2, 1).contiguous()
-        outs.append(x)
+        # x = self.norm3(x)
+        # x = x.permute(0, 2, 1).contiguous()
+        # outs.append(x[:, :self.num_classes, :])
+        # x = x[:, :self.num_classes, :]
         # outs.append(x.permute(0, 2, 1).contiguous())
 
         # stage 4
-        x = self.Temporal_Merging_Block4(x)
+        # x = self.Temporal_Merging_Block4(x)
+        # cls_temporal_tokens4 = repeat(self.temporal_token4, '() N d -> b N d', b=B)
+        # x = torch.cat((cls_temporal_tokens4, x), dim=1)
         for i, blk in enumerate(self.block4):
             x = blk(x)
-        x = self.norm4(x)
-        x = x.permute(0, 2, 1).contiguous()
-        outs.append(x)
+        # x = self.norm4(x)
+        # x = x.permute(0, 2, 1).contiguous()
+        # outs.append(x[:, :self.num_classes, :])
+        # x = x[:, :self.num_classes, :]
         # outs.append(x.permute(0, 2, 1).contiguous())
+
+        # output cls tokens
+        # result = torch.cat(outs, dim=-2)
+
+
 
         return x

@@ -444,17 +444,17 @@ class TSViT(nn.Module):
 
         x = self.temporal_transformer(x)
 
-        # x = x[:, :self.num_classes]
-        # x = x.reshape(B, self.num_patches_1d**2, self.num_classes, self.dim).permute(0, 2, 1, 3).reshape(B*self.num_classes, self.num_patches_1d**2, self.dim)
+        x = x[:, :self.num_classes]
+        x = x.reshape(B, self.num_patches_1d**2, self.num_classes, self.dim).permute(0, 2, 1, 3).reshape(B*self.num_classes, self.num_patches_1d**2, self.dim)
         # x.shape = (24*19, 12*12, 128)
-        # x += self.space_pos_embedding#[:, :, :(n + 1)]
-        # x = self.dropout(x)
-        # x = self.space_transformer(x)
+        x += self.space_pos_embedding#[:, :, :(n + 1)]
+        x = self.dropout(x)
+        x = self.space_transformer(x)
 
         # x = x.mean(dim=-2, keepdim=True)
 
-        x = x[:, :self.num_classes]
-        x = x.reshape(B, self.num_patches_1d**2, self.num_classes, self.dim).permute(0, 2, 1, 3).reshape(B*self.num_classes, self.num_patches_1d**2, self.dim)
+        # x = x[:, :self.num_classes]
+        # x = x.reshape(B, self.num_patches_1d**2, self.num_classes, self.dim).permute(0, 2, 1, 3).reshape(B*self.num_classes, self.num_patches_1d**2, self.dim)
         x = self.mlp_head(x.reshape(-1, self.dim))
         x = x.reshape(B, self.num_classes, self.num_patches_1d**2, self.patch_size**2).permute(0, 2, 3, 1)
         x = x.reshape(B, H, W, self.num_classes)

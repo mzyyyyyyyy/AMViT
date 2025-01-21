@@ -118,7 +118,7 @@ if __name__ == "__main__":
 
     checkpoint = config['CHECKPOINT']["load_from_checkpoint"]
     if checkpoint:
-        load_from_checkpoint(net, checkpoint, partial_restore=False, device='cpu')
+        load_from_checkpoint(net, checkpoint, partial_restore=False, device='cuda')
 
     net.to(device)
 

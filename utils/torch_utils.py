@@ -4,7 +4,7 @@ import glob
 import sys
 
 
-def load_from_checkpoint(net, checkpoint, partial_restore=False, device=None):
+def load_from_checkpoint(net, checkpoint, partial_restore=False, device=None): # 原始版本
     
     assert checkpoint is not None, "no path provided for checkpoint, value is None"
     if os.path.isdir(checkpoint):
@@ -13,13 +13,15 @@ def load_from_checkpoint(net, checkpoint, partial_restore=False, device=None):
         if device is None:
             saved_net = torch.load(checkpoint)
         else:
-            saved_net = torch.load(checkpoint, map_location=device, strict=False)
+            # saved_net = torch.load(checkpoint, map_location=device, strict=False)
+            saved_net = torch.load(checkpoint, map_location=device)
     elif os.path.isfile(checkpoint):
         print("loading model from %s" % checkpoint)
         if device is None:
             saved_net = torch.load(checkpoint)
         else:
-            saved_net = torch.load(checkpoint, map_location=device, strict=False)
+            # saved_net = torch.load(checkpoint, map_location=device, strict=False)
+            saved_net = torch.load(checkpoint, map_location=device)
     else:
         raise FileNotFoundError("provided checkpoint not found, does not mach any directory or file")
     
@@ -36,6 +38,15 @@ def load_from_checkpoint(net, checkpoint, partial_restore=False, device=None):
 
     net.load_state_dict(saved_net, strict=True)
     return checkpoint
+
+# def load_from_checkpoint(net, checkpoint, partial_restore=False, device=None): # 将原有模型的参数加载到新模型中
+#     saved_net = torch.load(checkpoint, map_location=device)
+#     for name, param in saved_net.items():
+#         if name in net.state_dict():
+#             net.state_dict()[name].copy_(param)
+#         else:
+#             print("param {} not found in net".format(name))
+
 
 
 def get_net_trainable_params(net):
