@@ -35,7 +35,7 @@ MODEL:
   # inter_channels: [128, 192, 288, 432] # TSViT
   num_head: 4
   mlp_ratio: 8
-  num_block: 1
+  num_block: [1, 1, 1, 1]
   final_embedding_dim: 128
   num_classes: 20
   patch_size: 2
@@ -88,7 +88,7 @@ CHECKPOINT:
   # load_from_checkpoint: '/root/autodl-tmp/4-AM/PASTIS24_fold2/best.pth'
   load_from_checkpoint: False
   partial_restore: False
-  save_path: '/root/autodl-tmp/4-AM-v11/PASTIS24_fold2'
+  save_path: '/root/autodl-tmp/4-AM-v18/PASTIS24_fold2'
   train_metrics_steps: 50
   eval_steps: 500
   save_steps: 20000000000

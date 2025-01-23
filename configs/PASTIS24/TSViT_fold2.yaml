@@ -1,5 +1,5 @@
 MODEL:
-  architecture:  "TSViT"
+  architecture:  "TSViT_single_token"
   img_res: 24
   max_seq_len: 60
   num_channels: 11
@@ -57,9 +57,10 @@ SOLVER:
   weight_decay: 0.000
 
 CHECKPOINT:
-  load_from_checkpoint: '/root/autodl-tmp/original/PASTIS24_fold2'
+  # load_from_checkpoint: '/root/autodl-tmp/original/PASTIS24_fold2'
+  load_from_checkpoint: False
   partial_restore: False
-  save_path: '/root/autodl-tmp/original_50e/PASTIS24_fold2'
+  save_path: '/root/autodl-tmp/TSViT-single/PASTIS24_fold2'
   train_metrics_steps: 50
   eval_steps: 500
   save_steps: 20000000000

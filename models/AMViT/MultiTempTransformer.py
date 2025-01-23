@@ -59,6 +59,11 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         return self.net(x)
+    
+        self.mlp_head = nn.Sequential(
+            nn.LayerNorm(self.patch_size**2),
+            nn.Linear(self.patch_size**2, self.patch_size**2)
+        )
 
 class Global_Relational_Block(nn.Module):
     def __init__(self, dim, num_heads=8):
@@ -94,6 +99,7 @@ class Global_Relational_Block(nn.Module):
 
     def forward(self, x):
         B, N, C = x.shape
+        x = self.norm(x) # 先 norm 后 self-attention
         q = self.q(x).reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
         kv = self.kv(x).reshape(B, -1, 2, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         k, v = kv[0], kv[1]
@@ -103,8 +109,8 @@ class Global_Relational_Block(nn.Module):
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C) + x # 残差操作
         x = self.proj(x)
-        x = self.norm(x)
         # x = nn.Dropout(0.3)(x)
+        x = self.norm(x) # 先 norm 后 MLP
         x = self.MLP(x) + x
         x = self.norm(x)
 
@@ -191,6 +197,41 @@ class Temporal_Merging_Block(nn.Module):
         return x
 
 
+class MergeBlock(nn.Module):
+    r""" Patch Merging Layer.
+
+    Args:
+        input_resolution (tuple[int]): Resolution of input feature.
+        dim (int): Number of input channels.
+        norm_layer (nn.Module, optional): Normalization layer.  Default: nn.LayerNorm
+    """
+
+    def __init__(self, dim, norm_layer=nn.LayerNorm):
+        super().__init__()
+        self.dim = dim
+        # self.reduction = nn.Linear(4 * dim, 2 * dim, bias=False)
+        self.norm = norm_layer(2 * dim)
+
+    def forward(self, x):
+        """
+        x: B, T, C
+        """
+        
+        B, T, C = x.shape
+        device = x.device
+        if T % 2 != 0:
+            padding = torch.zeros(B, 1, C).to(device)
+            x = torch.cat([x, padding], dim=1)
+        x0 = x[:, 0::2, :]  # B T/2 C
+        x1 = x[:, 1::2, :]  # B T/2 C
+        x = torch.cat([x0, x1], -1)  # B T/2 2*C
+        x = x.view(B, -1, 2 * C)  # B T/2 2*C
+
+        x = self.norm(x)
+        # x = self.reduction(x)
+
+        return x
+
 class MultiTempTransformer(nn.Module):
     def __init__(self, model_config, in_feat_dim=1024, embed_dims=[256, 384, 576, 864],
                  num_head=8, mlp_ratio=8, norm_layer=nn.LayerNorm,
@@ -200,40 +241,47 @@ class MultiTempTransformer(nn.Module):
         # Stage 1
         self.num_classes = model_config['num_classes']
         self.num_patches_1d = model_config['img_res'] // model_config['patch_size']
-        self.Temporal_Merging_Block1 = Temporal_Merging_Block(model_config, kernel_size=3, stride=1, in_chans=in_feat_dim,
-                                              embed_dim=embed_dims[0])
-        self.temporal_token1 = nn.Parameter(torch.randn(1, self.num_classes, embed_dims[0]))
+        # self.Temporal_Merging_Block1 = Temporal_Merging_Block(model_config, kernel_size=3, stride=1, in_chans=in_feat_dim,
+        #                                       embed_dim=embed_dims[0])
         self.block1 = nn.ModuleList([GLRBlock(
             dim=embed_dims[0], num_heads=num_head, mlp_ratio=mlp_ratio,norm_layer=norm_layer)
-            for i in range(num_block)])
+            for i in range(num_block[0])])
         # self.norm1 = norm_layer(embed_dims[0]) # 模仿TSViT，norm操作全部放在GLRBlock中
 
+        self.Temporal_Merging_Block1 = MergeBlock(embed_dims[0])
+
         # Stage 2
-        self.Temporal_Merging_Block2 = Temporal_Merging_Block(model_config, kernel_size=3, stride=2, in_chans=embed_dims[0],
-                                              embed_dim=embed_dims[1])
-        self.temporal_token2 = nn.Parameter(torch.randn(1, self.num_classes, embed_dims[1]))
+        # self.Temporal_Merging_Block2 = Temporal_Merging_Block(model_config, kernel_size=3, stride=2, in_chans=embed_dims[0],
+        #                                       embed_dim=embed_dims[1])
+        # self.temporal_token2 = nn.Parameter(torch.randn(1, self.num_classes, embed_dims[1]))
         self.block2 = nn.ModuleList([GLRBlock(
-            dim=embed_dims[1], num_heads=num_head, mlp_ratio=mlp_ratio,norm_layer=norm_layer)
-            for i in range(num_block)])
+            dim=2 * embed_dims[0], num_heads=num_head, mlp_ratio=mlp_ratio,norm_layer=norm_layer)
+            for i in range(num_block[1])])
         # self.norm2 = norm_layer(embed_dims[1])
+        self.Temporal_Merging_Block2 = MergeBlock(2 * embed_dims[0])
 
         # Stage 3
-        self.Temporal_Merging_Block3 = Temporal_Merging_Block(model_config, kernel_size=3, stride=2, in_chans=embed_dims[1],
-                                              embed_dim=embed_dims[2])
-        self.temporal_token3 = nn.Parameter(torch.randn(1, self.num_classes, embed_dims[2]))
+        # self.Temporal_Merging_Block3 = Temporal_Merging_Block(model_config, kernel_size=3, stride=2, in_chans=embed_dims[1],
+        #                                       embed_dim=embed_dims[2])
+        # self.temporal_token3 = nn.Parameter(torch.randn(1, self.num_classes, embed_dims[2]))
         self.block3 = nn.ModuleList([GLRBlock(
-            dim=embed_dims[2], num_heads=num_head, mlp_ratio=mlp_ratio,norm_layer=norm_layer)
-            for i in range(num_block)])
+            dim=4 * embed_dims[0], num_heads=num_head, mlp_ratio=mlp_ratio,norm_layer=norm_layer)
+            for i in range(num_block[2])])
         # self.norm3 = norm_layer(embed_dims[2])
+        self.Temporal_Merging_Block3 = MergeBlock(4 * embed_dims[0])
 
         # Stage 4
-        self.Temporal_Merging_Block4 = Temporal_Merging_Block(model_config, kernel_size=3, stride=2, in_chans=embed_dims[2],
-                                              embed_dim=embed_dims[3])
-        self.temporal_token4 = nn.Parameter(torch.randn(1, self.num_classes, embed_dims[3]))
+        # self.Temporal_Merging_Block4 = Temporal_Merging_Block(model_config, kernel_size=3, stride=2, in_chans=embed_dims[2],
+        #                                       embed_dim=embed_dims[3])
+        # self.temporal_token4 = nn.Parameter(torch.randn(1, self.num_classes, embed_dims[3]))
         self.block4 = nn.ModuleList([GLRBlock(
-            dim=embed_dims[3], num_heads=num_head, mlp_ratio=mlp_ratio,norm_layer=norm_layer)
-            for i in range(num_block)])
+            dim=8 * embed_dims[0], num_heads=num_head, mlp_ratio=mlp_ratio,norm_layer=norm_layer)
+            for i in range(num_block[3])])
         # self.norm4 = norm_layer(embed_dims[3])
+        # self.cls_head = nn.Sequential(
+        #     nn.LayerNorm(8 * embed_dims[0]),
+        #     nn.Linear(8 * embed_dims[0], 2560)
+        # )
 
         self.apply(self._init_weights)
 
@@ -252,8 +300,8 @@ class MultiTempTransformer(nn.Module):
             if m.bias is not None:
                 m.bias.data.zero_()
 
-    def freeze_init_emb(self):
-        self.Temporal_Merging_Block1.requires_grad = False
+    # def freeze_init_emb(self):
+    #     self.Temporal_Merging_Block1.requires_grad = False
 
     def forward(self, x):
         outs = []
@@ -272,7 +320,7 @@ class MultiTempTransformer(nn.Module):
         # outs.append(x.permute(0, 2, 1).contiguous()) # no temporal merge
 
         # stage 2
-        # x = self.Temporal_Merging_Block2(x)
+        x = self.Temporal_Merging_Block1(x)
         # cls_temporal_tokens2 = repeat(self.temporal_token2, '() N d -> b N d', b=B)
         # x = torch.cat((cls_temporal_tokens2, x), dim=1)
         for i, blk in enumerate(self.block2):
@@ -288,6 +336,7 @@ class MultiTempTransformer(nn.Module):
         # x = self.Temporal_Merging_Block3(x)
         # cls_temporal_tokens3 = repeat(self.temporal_token3, '() N d -> b N d', b=B)
         # x = torch.cat((cls_temporal_tokens3, x), dim=1)
+        x = self.Temporal_Merging_Block2(x)
         for i, blk in enumerate(self.block3):
             x = blk(x)
         # x = self.norm3(x)
@@ -300,6 +349,7 @@ class MultiTempTransformer(nn.Module):
         # x = self.Temporal_Merging_Block4(x)
         # cls_temporal_tokens4 = repeat(self.temporal_token4, '() N d -> b N d', b=B)
         # x = torch.cat((cls_temporal_tokens4, x), dim=1)
+        x = self.Temporal_Merging_Block3(x)
         for i, blk in enumerate(self.block4):
             x = blk(x)
         # x = self.norm4(x)
@@ -310,6 +360,10 @@ class MultiTempTransformer(nn.Module):
 
         # output cls tokens
         # result = torch.cat(outs, dim=-2)
+
+        # 分类头
+        x = torch.mean(x, dim=1, keepdim=True)
+
 
 
 
